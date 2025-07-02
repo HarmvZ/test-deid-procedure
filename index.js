@@ -66,18 +66,18 @@ async function ensureDirExists(dir) {
     }
 }
 
-async function processFileWithPreprocessors(file, filename, outputDir) {
+async function processFileWithPreprocessors(file, filename) {
     let processed = false;
     let errorMsg = "";
     let logs = [];
+    let processedFileBuffer = null;
     for (const preprocessorObj of globalThis.UPPY_FILE_PREPROCESSORS) {
         if (preprocessorObj.fileMatcher(file)) {
             const logInterceptor = interceptConsoleLogs();
             try {
                 const processedFile = await preprocessorObj.preprocessor(file);
-                const outPath = path.join(outputDir, filename);
                 const arrayBuffer = await processedFile.arrayBuffer();
-                await fs.writeFile(outPath, Buffer.from(arrayBuffer));
+                processedFileBuffer = Buffer.from(arrayBuffer);
                 processed = true;
                 logs = logInterceptor.getLogs();
                 process.stdout.write(`✔ ${filename}\n`);
@@ -91,7 +91,33 @@ async function processFileWithPreprocessors(file, filename, outputDir) {
             break;
         }
     }
-    return { processed, errorMsg, logs };
+    return { processed, errorMsg, logs, processedFileBuffer };
+}
+
+async function* walkDir(dir) {
+    const entries = await fs.readdir(dir, { withFileTypes: true });
+    for (const entry of entries) {
+        const fullPath = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+            yield* walkDir(fullPath);
+        } else if (entry.isFile()) {
+            yield fullPath;
+        }
+    }
+}
+
+function getRelativeOutputPath(inputFilePath, inputDir, outputDir) {
+    const relPath = path.relative(inputDir, inputFilePath);
+    return path.join(outputDir, relPath);
+}
+
+async function ensureParentDirExists(filePath) {
+    const dir = path.dirname(filePath);
+    try {
+        await fs.access(dir);
+    } catch {
+        await fs.mkdir(dir, { recursive: true });
+    }
 }
 
 async function processInputFiles() {
@@ -102,20 +128,24 @@ async function processInputFiles() {
 
     let processedCount = 0, skippedCount = 0, errorCount = 0, totalCount = 0;
     let logFileLines = [];
-    const files = await fs.readdir(inputDir);
-
-    for (const filename of files) {
+    // Traverse all files recursively
+    for await (const filePath of walkDir(inputDir)) {
         totalCount++;
-        const filePath = path.join(inputDir, filename);
+        const relPath = path.relative(inputDir, filePath);
+        const filename = relPath;
         const stat = await fs.stat(filePath);
         if (!stat.isFile()) continue;
         const fileBuffer = await fs.readFile(filePath);
         const file = new File([fileBuffer], filename, { type: "" });
 
-        const { processed, errorMsg, logs } = await processFileWithPreprocessors(file, filename, outputDir);
+        const { processed, errorMsg, logs, processedFileBuffer } =
+            await processFileWithPreprocessors(file, filename);
 
+        const outPath = getRelativeOutputPath(filePath, inputDir, outputDir);
         if (processed) {
             processedCount++;
+            await ensureParentDirExists(outPath);
+            await fs.writeFile(outPath, processedFileBuffer);
             logFileLines.push(`[${filename}] LOGS:\n${logs.join("\n")}\n`);
         } else if (errorMsg) {
             errorCount++;

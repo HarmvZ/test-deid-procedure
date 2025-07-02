@@ -2,6 +2,7 @@ import fetch from "node-fetch";
 import fs from "fs/promises";
 import path from "path";
 import { fileURLToPath } from "url";
+import { error } from "console";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -45,15 +46,62 @@ function interceptConsoleLogs() {
         error: console.error,
     };
     let capturedLogs = [];
-    console.log = (...args) => capturedLogs.push(stringifyArgs(args));
-    console.warn = (...args) => capturedLogs.push(stringifyArgs(args));
-    console.error = (...args) => capturedLogs.push(stringifyArgs(args));
+    function capture(...args) {
+        capturedLogs.push(stringifyArgs(args));
+    }
+    console.log = capture;
+    console.warn = capture;
+    console.error = capture;
+
+    // Intercept loglevel logs as well
+    let loglevelInterceptors = [];
+    let loggersToPatch = [];
+    try {
+        // Only patch globalThis.dcmjs?.log and globalThis.log (avoid dynamic import)
+        let loglevel = globalThis.dcmjs?.log || globalThis.log;
+        // Patch root logger and all named loggers if possible
+        if (loglevel) {
+            loggersToPatch.push(loglevel);
+            if (typeof loglevel.getLoggers === "function") {
+                const allLoggers = loglevel.getLoggers();
+                for (const key in allLoggers) {
+                    if (allLoggers[key]) loggersToPatch.push(allLoggers[key]);
+                }
+            }
+            for (const logger of loggersToPatch) {
+                loglevelInterceptors.push({
+                    logger,
+                    trace: logger.trace,
+                    debug: logger.debug,
+                    info: logger.info,
+                    warn: logger.warn,
+                    error: logger.error,
+                });
+                logger.trace = capture;
+                logger.debug = capture;
+                logger.info = capture;
+                logger.warn = capture;
+                logger.error = capture;
+            }
+        }
+    } catch {}
+
     return {
         getLogs: () => capturedLogs,
         restore: () => {
             console.log = original.log;
             console.warn = original.warn;
             console.error = original.error;
+            // Restore loglevel if intercepted
+            try {
+                for (const { logger, trace, debug, info, warn, error } of loglevelInterceptors) {
+                    logger.trace = trace;
+                    logger.debug = debug;
+                    logger.info = info;
+                    logger.warn = warn;
+                    logger.error = error;
+                }
+            } catch {}
         }
     };
 }
@@ -80,11 +128,15 @@ async function processFileWithPreprocessors(file, filename) {
                 processedFileBuffer = Buffer.from(arrayBuffer);
                 processed = true;
                 logs = logInterceptor.getLogs();
-                process.stdout.write(`✔ ${filename}\n`);
+                process.stdout.write("✔ ");
             } catch (err) {
                 errorMsg = err && err.message ? err.message : String(err);
                 logs = logInterceptor.getLogs();
-                process.stdout.write(`✖ ${filename} (error: ${errorMsg})\n`);
+                if (errorMsg.includes("Image is rejected due to de-identification protocol.")) {
+                    process.stdout.write("R ");
+                } else {
+                    process.stdout.write("✖ ");
+                }
             } finally {
                 logInterceptor.restore();
             }
@@ -126,7 +178,7 @@ async function processInputFiles() {
     const logPath = path.join(outputDir, "preprocessor_logs.txt");
     await ensureDirExists(outputDir);
 
-    let processedCount = 0, skippedCount = 0, errorCount = 0, totalCount = 0;
+    let processedCount = 0, skippedCount = 0, errorCount = 0, rejectedCount = 0, totalCount = 0;
     let logFileLines = [];
     // Traverse all files recursively
     for await (const filePath of walkDir(inputDir)) {
@@ -147,17 +199,20 @@ async function processInputFiles() {
             await ensureParentDirExists(outPath);
             await fs.writeFile(outPath, processedFileBuffer);
             logFileLines.push(`[${filename}] LOGS:\n${logs.join("\n")}\n`);
+        } else if (errorMsg.includes("Image is rejected due to de-identification protocol.")) {
+            rejectedCount++;
+            logFileLines.push(`[${filename}] REJECTED: ${errorMsg}\n`);
         } else if (errorMsg) {
             errorCount++;
             logFileLines.push(`[${filename}] ERROR: ${errorMsg}\n${logs.join("\n")}\n`);
         } else {
             skippedCount++;
-            process.stdout.write(`- ${filename} (skipped)\n`);
+            process.stdout.write(`-`);
         }
     }
     await fs.writeFile(logPath, logFileLines.join("\n"));
     process.stdout.write(
-        `\nSummary: total=${totalCount}, processed=${processedCount}, skipped=${skippedCount}, errors=${errorCount}\n`
+        `\nSummary: total=${totalCount}, processed=${processedCount}, rejected=${rejectedCount}, skipped=${skippedCount}, errors=${errorCount}\n`
     );
 }
 

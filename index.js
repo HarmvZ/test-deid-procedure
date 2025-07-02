@@ -24,7 +24,7 @@ async function loadDeidentificationProtocol() {
 }
 
 async function loadRemotePreprocessors(tempPath) {
-    const url = "https://raw.githubusercontent.com/comic/grand-challenge.org/9833a8c5017e074a30ff68c5cc717e87a2a68fa1/app/grandchallenge/uploads/static/js/file_preprocessors.js";
+    const url = "https://raw.githubusercontent.com/comic/grand-challenge.org/6380fa3b987a38085a163be8e76b4d8ececdb525/app/grandchallenge/uploads/static/js/file_preprocessors.js";
     const js = await fetchText(url);
     await fs.writeFile(tempPath, js);
     await import(tempPath + "?update=" + Date.now());

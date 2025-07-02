@@ -31,40 +31,69 @@ async function loadRemotePreprocessors() {
 async function processInputFiles() {
     const inputDir = path.join(__dirname, "input");
     const outputDir = path.join(__dirname, "output");
+    const logPath = path.join(outputDir, "preprocessor_logs.txt");
     try {
         await fs.access(outputDir);
     } catch {
         await fs.mkdir(outputDir);
     }
+    let processedCount = 0;
+    let skippedCount = 0;
+    let errorCount = 0;
+    let totalCount = 0;
+    let logFileLines = [];
     const files = await fs.readdir(inputDir);
     for (const filename of files) {
+        totalCount++;
         const filePath = path.join(inputDir, filename);
         const stat = await fs.stat(filePath);
         if (!stat.isFile()) continue;
-        // Simulate browser File object
         const fileBuffer = await fs.readFile(filePath);
         const file = new File([fileBuffer], filename, { type: "" });
         let processed = false;
+        let errorMsg = "";
         for (const preprocessorObj of globalThis.UPPY_FILE_PREPROCESSORS) {
             if (preprocessorObj.fileMatcher(file)) {
-                console.log(`Processing file: ${filename} with preprocessor...`);
+                // Capture logs during preprocessing
+                const originalConsoleLog = console.log;
+                const originalConsoleWarn = console.warn;
+                const originalConsoleError = console.error;
+                let capturedLogs = [];
+                console.log = (...args) => capturedLogs.push(args.join(" "));
+                console.warn = (...args) => capturedLogs.push(args.join(" "));
+                console.error = (...args) => capturedLogs.push(args.join(" "));
                 try {
                     const processedFile = await preprocessorObj.preprocessor(file);
                     const outPath = path.join(outputDir, filename);
                     const arrayBuffer = await processedFile.arrayBuffer();
                     await fs.writeFile(outPath, Buffer.from(arrayBuffer));
-                    console.log(`Saved processed file to: ${outPath}`);
                     processed = true;
+                    processedCount++;
+                    logFileLines.push(`[${filename}] LOGS:\n${capturedLogs.join("\n")}\n`);
+                    process.stdout.write(`✔ ${filename}\n`);
                 } catch (err) {
-                    console.log(`Error processing file ${filename} with preprocessor:`, err);
+                    errorCount++;
+                    errorMsg = err && err.message ? err.message : String(err);
+                    logFileLines.push(`[${filename}] ERROR: ${errorMsg}\n${capturedLogs.join("\n")}\n`);
+                    process.stdout.write(`✖ ${filename} (error: ${errorMsg})\n`);
+                } finally {
+                    console.log = originalConsoleLog;
+                    console.warn = originalConsoleWarn;
+                    console.error = originalConsoleError;
                 }
                 break;
             }
         }
-        if (!processed) {
-            console.log(`No matching preprocessor for file: ${filename}, skipping.`);
+        if (!processed && !errorMsg) {
+            skippedCount++;
+            process.stdout.write(`- ${filename} (skipped)\n`);
         }
     }
+    await fs.writeFile(logPath, logFileLines.join("\n"));
+    // Summary
+    process.stdout.write(
+        `\nSummary: total=${totalCount}, processed=${processedCount}, skipped=${skippedCount}, errors=${errorCount}\n`
+    );
 }
 
 // Main entry point
@@ -74,12 +103,10 @@ if (import.meta.url === process.argv[1] || import.meta.url === `file://${process
         globalThis.dcmjs = (await import("dcmjs")).default;
         await loadRemotePreprocessors();
         await processInputFiles();
-        console.log("All files processed.");
         // Clean up: remove the temporary remote preprocessors file
         const tempPath = path.join(__dirname, "remote_file_preprocessors.js");
         try {
             await fs.unlink(tempPath);
-            console.log("Removed temporary remote preprocessors file.");
         } catch {}
     })().catch(err => {
         console.error("Error processing files:", err);

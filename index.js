@@ -59,9 +59,16 @@ async function processInputFiles() {
                 const originalConsoleWarn = console.warn;
                 const originalConsoleError = console.error;
                 let capturedLogs = [];
-                console.log = (...args) => capturedLogs.push(args.join(" "));
-                console.warn = (...args) => capturedLogs.push(args.join(" "));
-                console.error = (...args) => capturedLogs.push(args.join(" "));
+                function stringifyArgs(args) {
+                    return args.map(arg =>
+                        typeof arg === "object" && arg !== null
+                            ? JSON.stringify(arg, null, 2)
+                            : String(arg)
+                    ).join(" ");
+                }
+                console.log = (...args) => capturedLogs.push(stringifyArgs(args));
+                console.warn = (...args) => capturedLogs.push(stringifyArgs(args));
+                console.error = (...args) => capturedLogs.push(stringifyArgs(args));
                 try {
                     const processedFile = await preprocessorObj.preprocessor(file);
                     const outPath = path.join(outputDir, filename);

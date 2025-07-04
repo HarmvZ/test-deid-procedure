@@ -4,8 +4,6 @@ import path from "path";
 import { fileURLToPath } from "url";
 import deidProtocol from "@diagnijmegen/rse-grand-challenge-dicom-deid-procedure";
 
-console.log('deidProtocol:', deidProtocol);
-
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -208,7 +206,7 @@ async function processInputFiles() {
 }
 
 async function main() {
-    globalThis.DEIDENTIFICATION_PROTOCOL = deidProtocol;
+    globalThis.GrandChallengeDICOMDeIdProcedure = deidProtocol;
     globalThis.dcmjs = (await import("dcmjs")).default;
     const tempPath = path.join(__dirname, "remote_file_preprocessors.js");
     await loadRemotePreprocessors(tempPath);

@@ -18,6 +18,7 @@
   "homepage": "https://github.com/HarmvZ/test-deid-procedure#readme",
   "description": "",
   "dependencies": {
+    "@diagnijmegen/rse-grand-challenge-dicom-deid-procedure": "^0.20250704.1",
     "dcmjs": "^0.42.0",
     "node-fetch": "^3.3.2"
   }

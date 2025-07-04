@@ -2,16 +2,12 @@ import fetch from "node-fetch";
 import fs from "fs/promises";
 import path from "path";
 import { fileURLToPath } from "url";
-import { error } from "console";
+import deidProtocol from "@diagnijmegen/rse-grand-challenge-dicom-deid-procedure";
+
+console.log('deidProtocol:', deidProtocol);
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
-async function fetchJson(url) {
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`Failed to fetch: ${url} (${res.status} ${res.statusText})`);
-    return await res.json();
-}
 
 async function fetchText(url) {
     const res = await fetch(url);
@@ -19,13 +15,8 @@ async function fetchText(url) {
     return await res.text();
 }
 
-async function loadDeidentificationProtocol() {
-    const url = "https://raw.githubusercontent.com/DIAGNijmegen/rse-grand-challenge-dicom-de-id-procedure/refs/heads/main/dist/procedure.json";
-    return await fetchJson(url);
-}
-
 async function loadRemotePreprocessors(tempPath) {
-    const url = "https://raw.githubusercontent.com/comic/grand-challenge.org/6380fa3b987a38085a163be8e76b4d8ececdb525/app/grandchallenge/uploads/static/js/file_preprocessors.js";
+    const url = "https://github.com/comic/grand-challenge.org/raw/refs/heads/uppy-preprocessors/app/grandchallenge/uploads/static/js/file_preprocessors.js";
     const js = await fetchText(url);
     await fs.writeFile(tempPath, js);
     await import(tempPath + "?update=" + Date.now());
@@ -207,7 +198,7 @@ async function processInputFiles() {
             logFileLines.push(`[${filename}] ERROR: ${errorMsg}\n${logs.join("\n")}\n`);
         } else {
             skippedCount++;
-            process.stdout.write(`-`);
+            process.stdout.write(`S `);
         }
     }
     await fs.writeFile(logPath, logFileLines.join("\n"));
@@ -217,7 +208,7 @@ async function processInputFiles() {
 }
 
 async function main() {
-    globalThis.DEIDENTIFICATION_PROTOCOL = await loadDeidentificationProtocol();
+    globalThis.DEIDENTIFICATION_PROTOCOL = deidProtocol;
     globalThis.dcmjs = (await import("dcmjs")).default;
     const tempPath = path.join(__dirname, "remote_file_preprocessors.js");
     await loadRemotePreprocessors(tempPath);

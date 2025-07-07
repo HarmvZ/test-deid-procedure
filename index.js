@@ -112,7 +112,7 @@ async function processFileWithPreprocessors(file, filename) {
     let logs = [];
     let processedFileBuffer = null;
     for (const preprocessorObj of globalThis.UPPY_FILE_PREPROCESSORS) {
-        if (preprocessorObj.fileMatcher(file)) {
+        if (await preprocessorObj.fileMatcher(file)) {
             const logInterceptor = interceptConsoleLogs();
             try {
                 const processedFile = await preprocessorObj.preprocessor(file);

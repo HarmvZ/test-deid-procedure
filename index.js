@@ -33,6 +33,7 @@ function interceptConsoleLogs() {
         log: console.log,
         warn: console.warn,
         error: console.error,
+        debug: console.debug,
     };
     let capturedLogs = [];
     function capture(...args) {
@@ -41,6 +42,7 @@ function interceptConsoleLogs() {
     console.log = capture;
     console.warn = capture;
     console.error = capture;
+    console.debug = capture;
 
     // Intercept loglevel logs as well
     let loglevelInterceptors = [];
@@ -81,6 +83,7 @@ function interceptConsoleLogs() {
             console.log = original.log;
             console.warn = original.warn;
             console.error = original.error;
+            console.debug = original.debug;
             // Restore loglevel if intercepted
             try {
                 for (const { logger, trace, debug, info, warn, error } of loglevelInterceptors) {
